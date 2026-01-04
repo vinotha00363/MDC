@@ -1,141 +1,155 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-import time
 
 # --------------------------------------------------
 # PAGE CONFIG
 # --------------------------------------------------
 st.set_page_config(
-    page_title="Dynamic Earnings Manipulation Detection System (SVM)",
+    page_title="Earnings Manipulation Detection (SVM)",
     layout="wide"
 )
 
 # --------------------------------------------------
+# INIT SESSION STATE (CRITICAL FIX)
+# --------------------------------------------------
+if "svm_model" not in st.session_state:
+    st.session_state.svm_model = None
+
+if "svm_trained" not in st.session_state:
+    st.session_state.svm_trained = False
+
+if "prediction_done" not in st.session_state:
+    st.session_state.prediction_done = False
+
+# --------------------------------------------------
+# TITLE
+# --------------------------------------------------
+st.title("📊 Earnings Manipulation Detection System (SVM)")
+st.write(
+    "This system detects earnings manipulation using a "
+    "**Support Vector Machine (SVM)** model."
+)
+
+st.markdown("---")
+
+# --------------------------------------------------
 # SIDEBAR – DATASET UPLOAD
 # --------------------------------------------------
-st.sidebar.title("📁 Upload Dataset")
+st.sidebar.header("📁 Upload Dataset")
 uploaded_file = st.sidebar.file_uploader(
-    "Upload Earnings Manipulator Excel File",
+    "Upload Earnings Manipulator Excel File (.xlsx)",
     type=["xlsx"]
 )
 
-st.sidebar.markdown("---")
-st.sidebar.info(
-    "This app trains an SVM model dynamically using the uploaded dataset."
-)
+FEATURE_COLS = ["DSRI", "GMI", "AQI", "SGI", "DEPI", "SGAI", "ACCR", "LEVI"]
+TARGET_COL = "Manipulator"
 
 # --------------------------------------------------
-# MAIN TITLE
+# DATASET PROCESSING
 # --------------------------------------------------
-st.markdown("""
-# 📊 Dynamic Earnings Manipulation Detection System (SVM)
+if uploaded_file is None:
+    st.info("⬅️ Please upload the dataset to proceed")
+    st.stop()
 
-This application performs **end-to-end earnings manipulation analysis** using:
+df = pd.read_excel(uploaded_file)
 
-- Exploratory Data Analysis (EDA)
-- Feature scaling
-- **Support Vector Machine (SVM)**
-- User-defined prediction
-""")
+# Validate columns
+required_cols = FEATURE_COLS + [TARGET_COL]
+if not all(col in df.columns for col in required_cols):
+    st.error(f"Dataset must contain columns: {required_cols}")
+    st.stop()
 
-st.info("⬅️ Please upload the dataset to proceed")
+st.success("Dataset uploaded successfully ✅")
+
+st.subheader("📄 Dataset Preview")
+st.dataframe(df.head())
+
+X = df[FEATURE_COLS]
+y = df[TARGET_COL].map({"Yes": 1, "No": 0})
+
+st.markdown("---")
 
 # --------------------------------------------------
-# AFTER DATASET UPLOAD
+# MODEL TRAINING
 # --------------------------------------------------
-if uploaded_file is not None:
+st.subheader("⚙️ Model Training")
 
-    df = pd.read_excel(uploaded_file)
+if st.button("▶ Train SVM Model"):
 
-    st.success("Dataset uploaded successfully ✅")
-    st.markdown("---")
+    with st.status("Training SVM model...", expanded=True) as status:
+        st.write("✔ Scaling features")
+        st.write("✔ Training SVM classifier")
 
-    # --------------------------------------------------
-    # DATA PREVIEW
-    # --------------------------------------------------
-    st.subheader("📄 Dataset Preview")
-    st.dataframe(df.head())
+        svm_pipeline = Pipeline([
+            ("scaler", StandardScaler()),
+            ("svm", SVC(kernel="rbf", probability=True))
+        ])
 
-    # --------------------------------------------------
-    # FEATURE SELECTION
-    # --------------------------------------------------
-    st.subheader("🧠 Feature Selection")
+        svm_pipeline.fit(X, y)
 
-    feature_cols = [
-        "DSRI", "GMI", "AQI", "SGI", "DEPI", "SGAI", "ACCR", "LEVI"
-    ]
+        st.session_state.svm_model = svm_pipeline
+        st.session_state.svm_trained = True
+        st.session_state.prediction_done = False
 
-    target_col = "Manipulator"
+        status.update(label="Model training completed", state="complete")
 
-    if not all(col in df.columns for col in feature_cols + [target_col]):
-        st.error("Dataset must contain required columns.")
+    st.success("SVM model trained successfully 🎉")
+
+st.markdown("---")
+
+# --------------------------------------------------
+# USER INPUT
+# --------------------------------------------------
+st.subheader("✍️ User-Defined Prediction")
+
+cols = st.columns(4)
+user_input = {}
+
+for i, col in enumerate(FEATURE_COLS):
+    user_input[col] = cols[i % 4].number_input(col, value=1.0)
+
+input_df = pd.DataFrame([user_input])
+
+# --------------------------------------------------
+# PREDICTION (FINAL FIX)
+# --------------------------------------------------
+if st.button("🔍 Predict Manipulation Risk"):
+
+    if not st.session_state.svm_trained:
+        st.warning("⚠️ Please train the SVM model first.")
         st.stop()
 
-    X = df[feature_cols]
-    y = df[target_col].map({"Yes": 1, "No": 0})
+    model = st.session_state.svm_model
+    prob = model.predict_proba(input_df)[0][1]
+    pred = model.predict(input_df)[0]
 
-    # --------------------------------------------------
-    # MODEL PIPELINE
-    # --------------------------------------------------
-    svm_pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("svm", SVC(kernel="rbf", probability=True))
-    ])
+    st.session_state.prediction_done = True
+    st.session_state.pred_value = pred
+    st.session_state.pred_prob = prob
+
+# --------------------------------------------------
+# SHOW RESULT (PERSISTS AFTER RERUN)
+# --------------------------------------------------
+if st.session_state.prediction_done:
 
     st.markdown("---")
-    st.subheader("⚙️ Model Training")
+    st.subheader("📌 Final Classification Result")
 
-    if st.button("▶ Train SVM Model"):
+    if st.session_state.pred_value == 1:
+        st.error(
+            f"⚠️ **EARNINGS MANIPULATOR**\n\n"
+            f"Predicted Probability: **{st.session_state.pred_prob:.2%}**"
+        )
+    else:
+        st.success(
+            f"✅ **NON-MANIPULATOR**\n\n"
+            f"Predicted Probability: **{1 - st.session_state.pred_prob:.2%}**"
+        )
 
-        with st.status("Training SVM model...", expanded=True):
-            time.sleep(1)
-            st.write("✔ Scaling features")
-            time.sleep(1)
-            st.write("✔ Training SVM classifier")
-
-            svm_pipeline.fit(X, y)
-
-            time.sleep(1)
-            st.write("✔ Model training completed")
-
-        st.success("SVM model trained successfully 🎉")
-
-        # --------------------------------------------------
-        # USER INPUT PREDICTION
-        # --------------------------------------------------
-        st.markdown("---")
-        st.subheader("✍️ User-Defined Prediction")
-
-        cols = st.columns(4)
-
-        user_input = {}
-        for i, col in enumerate(feature_cols):
-            user_input[col] = cols[i % 4].number_input(col, value=1.0)
-
-        input_df = pd.DataFrame([user_input])
-
-        if st.button("🔍 Predict Manipulation Risk"):
-
-            prob = svm_pipeline.predict_proba(input_df)[0][1]
-            pred = svm_pipeline.predict(input_df)[0]
-
-            st.markdown("---")
-            st.subheader("📌 Final Result")
-
-            if pred == 1:
-                st.error(
-                    f"⚠️ **EARNINGS MANIPULATOR DETECTED**\n\n"
-                    f"Probability: **{prob:.2%}**"
-                )
-            else:
-                st.success(
-                    f"✅ **NON-MANIPULATOR**\n\n"
-                    f"Probability: **{1 - prob:.2%}**"
-                )
+    st.info("Model Used: **Support Vector Machine (SVM)**")
 
 # --------------------------------------------------
 # FOOTER
