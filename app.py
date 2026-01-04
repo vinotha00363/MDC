@@ -1,18 +1,21 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 import time
 
 # --------------------------------------------------
 # PAGE CONFIG
 # --------------------------------------------------
 st.set_page_config(
-    page_title="Dynamic Earnings Manipulation Detection System",
+    page_title="Dynamic Earnings Manipulation Detection System (SVM)",
     layout="wide"
 )
 
 # --------------------------------------------------
-# SIDEBAR – DATA UPLOAD
+# SIDEBAR – DATASET UPLOAD
 # --------------------------------------------------
 st.sidebar.title("📁 Upload Dataset")
 uploaded_file = st.sidebar.file_uploader(
@@ -20,145 +23,122 @@ uploaded_file = st.sidebar.file_uploader(
     type=["xlsx"]
 )
 
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "This app trains an SVM model dynamically using the uploaded dataset."
+)
+
 # --------------------------------------------------
-# MAIN LANDING UI (HTML-LIKE)
+# MAIN TITLE
 # --------------------------------------------------
 st.markdown("""
-# 📊 Dynamic Earnings Manipulation Detection System
+# 📊 Dynamic Earnings Manipulation Detection System (SVM)
 
-This application performs **end-to-end earnings manipulation analysis**:
+This application performs **end-to-end earnings manipulation analysis** using:
 
-- 📈 Exploratory Data Analysis (EDA)  
-- 📐 Financial Ratio Analytics  
-- 🤖 Machine Learning Models  
-- 🔄 **Dynamic model selection**  
-- 🎯 User-defined prediction  
-
-⬅️ **Please upload the dataset to proceed**
+- Exploratory Data Analysis (EDA)
+- Feature scaling
+- **Support Vector Machine (SVM)**
+- User-defined prediction
 """)
 
-st.markdown("---")
+st.info("⬅️ Please upload the dataset to proceed")
 
 # --------------------------------------------------
-# AFTER FILE UPLOAD
+# AFTER DATASET UPLOAD
 # --------------------------------------------------
 if uploaded_file is not None:
 
-    st.success("✅ Dataset uploaded successfully")
-
-    # -----------------------------
-    # LOAD DATA
-    # -----------------------------
     df = pd.read_excel(uploaded_file)
 
+    st.success("Dataset uploaded successfully ✅")
+    st.markdown("---")
+
+    # --------------------------------------------------
+    # DATA PREVIEW
+    # --------------------------------------------------
     st.subheader("📄 Dataset Preview")
     st.dataframe(df.head())
 
-    st.markdown("---")
+    # --------------------------------------------------
+    # FEATURE SELECTION
+    # --------------------------------------------------
+    st.subheader("🧠 Feature Selection")
 
-    # -----------------------------
-    # REQUIRED COLUMNS CHECK
-    # -----------------------------
-    required_cols = ["ACCR", "AQI", "SGAI", "DSRI", "GMI"]
+    feature_cols = [
+        "DSRI", "GMI", "AQI", "SGI", "DEPI", "SGAI", "ACCR", "LEVI"
+    ]
 
-    if not all(col in df.columns for col in required_cols):
-        st.error(
-            f"Dataset must contain these columns: {required_cols}"
-        )
+    target_col = "Manipulator"
+
+    if not all(col in df.columns for col in feature_cols + [target_col]):
+        st.error("Dataset must contain required columns.")
         st.stop()
 
-    # -----------------------------
-    # EDA SECTION
-    # -----------------------------
-    st.subheader("📊 Exploratory Data Analysis")
+    X = df[feature_cols]
+    y = df[target_col].map({"Yes": 1, "No": 0})
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**Descriptive Statistics**")
-        st.dataframe(df[required_cols].describe())
-
-    with col2:
-        st.write("**Missing Values**")
-        st.dataframe(df[required_cols].isnull().sum())
+    # --------------------------------------------------
+    # MODEL PIPELINE
+    # --------------------------------------------------
+    svm_pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("svm", SVC(kernel="rbf", probability=True))
+    ])
 
     st.markdown("---")
+    st.subheader("⚙️ Model Training")
 
-    # -----------------------------
-    # USER INPUT SECTION
-    # -----------------------------
-    st.subheader("✍️ User-Defined Financial Inputs")
+    if st.button("▶ Train SVM Model"):
 
-    accr = st.number_input("ACCR – Total Accruals to Total Assets", value=0.0)
-    aqi = st.number_input("AQI – Asset Quality Index", value=1.0)
-    sgai = st.number_input("SGAI – SG&A Expense Index", value=1.0)
-    dsri = st.number_input("DSRI – Days Sales in Receivables Index", value=1.0)
-    gmi = st.number_input("GMI – Gross Margin Index", value=1.0)
+        with st.status("Training SVM model...", expanded=True):
+            time.sleep(1)
+            st.write("✔ Scaling features")
+            time.sleep(1)
+            st.write("✔ Training SVM classifier")
 
-    st.markdown("---")
-
-    # -----------------------------
-    # MODEL EXECUTION
-    # -----------------------------
-    if st.button("▶ Run Earnings Manipulation Analysis"):
-
-        with st.status("Running analysis pipeline...", expanded=True):
+            svm_pipeline.fit(X, y)
 
             time.sleep(1)
-            st.write("✔ Step 1: Inputs received")
+            st.write("✔ Model training completed")
 
-            time.sleep(1)
-            st.write("✔ Step 2: Applying CART decision rules")
+        st.success("SVM model trained successfully 🎉")
 
-            # CART LOGIC (FROM YOUR CASE FILE)
-            if accr <= -0.22:
-                decision = "NON-MANIPULATOR"
-                rule = "ACCR ≤ −0.22"
+        # --------------------------------------------------
+        # USER INPUT PREDICTION
+        # --------------------------------------------------
+        st.markdown("---")
+        st.subheader("✍️ User-Defined Prediction")
 
-            elif aqi <= 0.77:
-                decision = "NON-MANIPULATOR"
-                rule = "AQI ≤ 0.77"
+        cols = st.columns(4)
 
-            elif sgai <= 1.10:
-                decision = "NON-MANIPULATOR"
-                rule = "SGAI ≤ 1.10"
+        user_input = {}
+        for i, col in enumerate(feature_cols):
+            user_input[col] = cols[i % 4].number_input(col, value=1.0)
 
-            elif dsri <= 1.11:
-                decision = "MANIPULATOR"
-                rule = "DSRI ≤ 1.11"
+        input_df = pd.DataFrame([user_input])
 
-            elif gmi <= 1.05:
-                decision = "MANIPULATOR"
-                rule = "GMI ≤ 1.05"
+        if st.button("🔍 Predict Manipulation Risk"):
 
+            prob = svm_pipeline.predict_proba(input_df)[0][1]
+            pred = svm_pipeline.predict(input_df)[0]
+
+            st.markdown("---")
+            st.subheader("📌 Final Result")
+
+            if pred == 1:
+                st.error(
+                    f"⚠️ **EARNINGS MANIPULATOR DETECTED**\n\n"
+                    f"Probability: **{prob:.2%}**"
+                )
             else:
-                decision = "NON-MANIPULATOR"
-                rule = "All thresholds exceeded"
+                st.success(
+                    f"✅ **NON-MANIPULATOR**\n\n"
+                    f"Probability: **{1 - prob:.2%}**"
+                )
 
-            time.sleep(1)
-            st.write("✔ Step 3: Decision logic completed")
-
-        st.markdown("---")
-
-        # -----------------------------
-        # FINAL RESULT
-        # -----------------------------
-        st.subheader("📌 Final Classification Result")
-
-        if decision == "MANIPULATOR":
-            st.error(
-                f"⚠️ **EARNINGS MANIPULATOR DETECTED**\n\n"
-                f"Decision Rule Triggered: **{rule}**"
-            )
-        else:
-            st.success(
-                f"✅ **NON-MANIPULATOR**\n\n"
-                f"Decision Rule Triggered: **{rule}**"
-            )
-
-        st.markdown("---")
-
-        st.info(
-            "📘 **Model Used:** CART (Decision Tree)\n\n"
-            "This model is selected for deployment due to its "
-            "high interpretability and managerial relevance."
-        )
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
+st.markdown("---")
+st.caption("© Earnings Manipulation Detection System | SVM Deployment")
